@@ -1,5 +1,4 @@
 import config as CONFIG
-import sys
 import os
 from alpaca.trading.client import TradingClient
 import urllib3
@@ -10,7 +9,10 @@ from cli import CliHandler
 
 http = urllib3.PoolManager()
 cli = CliHandler()
-api = TradingClient(CONFIG.ALPACA_PUBLIC_KEY, CONFIG.ALPACA_SECRET_KEY, paper=CONFIG.PAPER)
+api = TradingClient(
+    CONFIG.ALPACA_PUBLIC_KEY, CONFIG.ALPACA_SECRET_KEY, paper=CONFIG.PAPER
+)
+
 
 class Portfolio:
     def __init__(self):
@@ -41,7 +43,9 @@ class Portfolio:
         with open("portfolio.json", "w") as f:
             json.dump(self.portfolio, f)
 
+
 portfolio = Portfolio()
+
 
 class StockTrader:
     def __init__(self):
@@ -54,39 +58,43 @@ class StockTrader:
     async def retrieve_tickers(self):
         if self.tickers:
             return self.tickers
-        
+
         url = "ftp://ftp.nasdaqtrader.com/symboldirectory/nasdaqtraded.txt"
         df = pd.read_csv(url, sep="|")["Symbol"][:-1]
-        blacklist = ['.', '$']
+        blacklist = [".", "$"]
         self.tickers = [t for t in df if all(char not in t for char in blacklist)]
         return self.tickers
 
     async def get_tickers_json(self):
-        tickers = await retrieve_tickers()
-        ticker_batches = [tickers[i:i+1900] for i in range(0, len(tickers), 1900)]
+        tickers = await self.retrieve_tickers()
+        ticker_batches = [tickers[i: i + 1900] for i in range(0, len(tickers), 1900)]
         for batch in ticker_batches:
             url = f"https://query1.finance.yahoo.com/v7/finance/quote?formatted=true&symbols={'%2c'.join(batch)}&corsDomain=finance.yahoo.com"
             response = http.request("GET", url)
             data = json.loads(response.data)
             for ticker in data["quoteResponse"]["result"]:
-                await self.make_decision(ticker["symbol"], ticker["regularMarketPrice"]["raw"])
+                await self.make_decision(
+                    ticker["symbol"], ticker["regularMarketPrice"]["raw"]
+                )
 
     async def make_decision(self, ticker, price):
         if ticker not in self.market:
-            self.market[ticker] = newvalue
-            changes[ticker] = 0
+            self.market[ticker] = price
+            self.changes[ticker] = 0
             return
 
-        change = (newvalue - self.market[ticker]) / self.market[ticker] * 100
-        self.market[ticker] = newvalue
+        change = (price - self.market[ticker]) / self.market[ticker] * 100
+        self.market[ticker] = price
         self.changes[ticker] = change
-        if change > CONFIG.BUY_THRESHOLD and self.account.buying_power > newvalue:
-            max_shares = int(self.account.buying_power / newvalue)
-            preferred_shares = CONFIG.CHOOSE_AMOUNT(newvalue)
+        if change > CONFIG.BUY_THRESHOLD and self.account.buying_power > price:
+            max_shares = int(self.account.buying_power / price)
+            preferred_shares = CONFIG.CHOOSE_AMOUNT(price)
             qty = min(max_shares, preferred_shares)
-            api.submit_order(symbol=ticker, qty=qty, side="buy", type="market", time_in_force="day")
+            api.submit_order(
+                symbol=ticker, qty=qty, side="buy", type="market", time_in_force="day"
+            )
             portfolio.add(ticker, qty)
-            cli.buy_msg(ticker, newvalue, qty)
+            cli.buy_msg(ticker, price, qty)
 
     async def start_buys(self):
         try:
@@ -95,7 +103,7 @@ class StockTrader:
                     await asyncio.sleep(60)
                     continue
 
-                await get_tickers_json()
+                await self.get_tickers_json()
                 await asyncio.sleep(60)
         except KeyboardInterrupt:
             portfolio.save()
@@ -112,7 +120,13 @@ class StockTrader:
                     change = self.changes[ticker]
                     if change < CONFIG.SELL_THRESHOLD:
                         qty = portfolio.get(ticker)
-                        api.submit_order(symbol=ticker, qty=qty, side="sell", type="market", time_in_force="day")
+                        api.submit_order(
+                            symbol=ticker,
+                            qty=qty,
+                            side="sell",
+                            type="market",
+                            time_in_force="day",
+                        )
                         portfolio.remove(ticker, ticker, qty)
                         cli.sell_msg(ticker, self.market[ticker], qty)
                 await asyncio.sleep(60)
@@ -120,7 +134,8 @@ class StockTrader:
             portfolio.save()
             os._exit(0)
 
-class StockTraderRunner():
+
+class StockTraderRunner:
     def __init__(self):
         self.trader = StockTrader()
 
