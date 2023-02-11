@@ -1,137 +1,196 @@
 import config as CONFIG
 import os
+
+# trade api is needed to retrieve positions
+import alpaca_trade_api as tradeapi
 from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce
 import urllib3
 import json
 import pandas as pd
-import asyncio
 from cli import CliHandler
+from strategy import Strategy
+from threading import Thread
+import time
+import sqlite3
+from utils import Utils
 
 http = urllib3.PoolManager()
 cli = CliHandler()
+utils = Utils()
+strategy = Strategy()
 api = TradingClient(
     CONFIG.ALPACA_PUBLIC_KEY, CONFIG.ALPACA_SECRET_KEY, paper=CONFIG.PAPER
+)
+account = tradeapi.REST(
+    key_id=CONFIG.ALPACA_PUBLIC_KEY,
+    secret_key=CONFIG.ALPACA_SECRET_KEY,
+    base_url="https://paper-api.alpaca.markets",
+    api_version="v2",
 )
 
 
 class Portfolio:
     def __init__(self):
-        self.portfolio = json.load(open("portfolio.json"))
+        self.portfolio = {}
 
-    def get(self, ticker):
-        if ticker in self.portfolio:
-            return self.portfolio[ticker]
-        raise Exception("Ticker not in portfolio")
+    def all(self):
+        positions = account.list_positions()
+        return {position.symbol: position.qty for position in positions}
 
-    def add(self, ticker, quantity):
-        if ticker in self.portfolio:
-            self.portfolio[ticker] += quantity
-        else:
-            self.portfolio[ticker] = quantity
+    def cached(self):
+        return self.portfolio
 
-    def remove(self, ticker, quantity):
-        if ticker in self.portfolio:
-            self.portfolio[ticker] -= quantity
-        else:
-            raise Exception("Ticker not in portfolio")
+    def exists(self, ticker):
+        return ticker in self.all().keys()
 
-    exists = lambda self, ticker: ticker in self.portfolio
+    def add(self, ticker, qty, price):
+        market_order_data = MarketOrderRequest(
+            symbol=ticker,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.DAY,
+        )
+        api.submit_order(order_data=market_order_data)
+        # wait for order to be processed
+        time.sleep(CONFIG.ALPACA_TIMEOUT)
+        # add to self.portfolio
+        self.portfolio[ticker] = {qty: qty, price: price}
 
-    all = lambda self: self.portfolio
-
-    def save(self):
-        with open("portfolio.json", "w") as f:
-            json.dump(self.portfolio, f)
+    def remove(self, ticker):
+        qty = self.portfolio[ticker]["qty"]
+        market_order_data = MarketOrderRequest(
+            symbol=ticker,
+            qty=qty,
+            side=OrderSide.SELL,
+            time_in_force=TimeInForce.DAY,
+        )
+        api.submit_order(order_data=market_order_data)
+        # wait for order to be processed
+        time.sleep(CONFIG.ALPACA_TIMEOUT)
+        # remove from self.portfolio
+        del self.portfolio[ticker]
 
 
 portfolio = Portfolio()
+
+
+class Storage:
+    def __init__(self):
+        self.conn = sqlite3.connect("ticker_data.db")
+        self.create_table()
+
+    def create_table(self):
+        c = self.conn.cursor()
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS ticker_data (
+                        ticker text,
+                        price real
+                    )"""
+        )
+        self.conn.commit()
+
+    def save_data(self, ticker, price):
+        c = self.conn.cursor()
+        c.execute(
+            """INSERT INTO ticker_data (ticker, price)
+                    VALUES (?,?)""",
+            (ticker, price),
+        )
+        self.conn.commit()
+
+    def retrieve_data(self, ticker):
+        c = self.conn.cursor()
+        c.execute(
+            """SELECT price FROM ticker_data
+                    WHERE ticker=?""",
+            (ticker,),
+        )
+        return c.fetchall()
+
+
+storage = Storage()
 
 
 class StockTrader:
     def __init__(self):
         self.account = api.get_account()
         self.market_is_open = lambda: api.get_clock().is_open
-        self.tickers = False
-        self.market = {}
-        self.changes = {}
+        # keep track of buys and prices
+        self.buys = {}
 
-    async def retrieve_tickers(self):
-        if self.tickers:
-            return self.tickers
+    def get_tickers_json(self):
+        tickers = utils.batch(CONFIG.TRADE_TICKERS, 1900)
+        url = f"https://query1.finance.yahoo.com/v7/finance/quote?formatted=true&symbols={'%2c'.join(tickers)}&corsDomain=finance.yahoo.com"
+        response = http.request("GET", url)
+        data = json.loads(response.data)
+        for ticker in data["quoteResponse"]["result"]:
+            try:
+                ticker, price = ticker["symbol"], ticker["regularMarketPrice"]["raw"]
+                storage.save_data(ticker, price)
+                self.make_decision(ticker, price)
+            except:
+                cli.custom_msg("red", f" -> Error with {ticker['symbol']}")
+                pass
 
-        url = "ftp://ftp.nasdaqtrader.com/symboldirectory/nasdaqtraded.txt"
-        df = pd.read_csv(url, sep="|")["Symbol"][:-1]
-        blacklist = [".", "$"]
-        self.tickers = [t for t in df if all(char not in t for char in blacklist)]
-        return self.tickers
-
-    async def get_tickers_json(self):
-        tickers = await self.retrieve_tickers()
-        ticker_batches = [tickers[i: i + 1900] for i in range(0, len(tickers), 1900)]
-        for batch in ticker_batches:
-            url = f"https://query1.finance.yahoo.com/v7/finance/quote?formatted=true&symbols={'%2c'.join(batch)}&corsDomain=finance.yahoo.com"
-            response = http.request("GET", url)
-            data = json.loads(response.data)
-            for ticker in data["quoteResponse"]["result"]:
-                await self.make_decision(
-                    ticker["symbol"], ticker["regularMarketPrice"]["raw"]
-                )
-
-    async def make_decision(self, ticker, price):
-        if ticker not in self.market:
-            self.market[ticker] = price
-            self.changes[ticker] = 0
+    def make_decision(self, ticker, price):
+        if float(self.account.buying_power) < price:
             return
 
-        change = (price - self.market[ticker]) / self.market[ticker] * 100
-        self.market[ticker] = price
-        self.changes[ticker] = change
-        if change > CONFIG.BUY_THRESHOLD and self.account.buying_power > price:
-            max_shares = int(self.account.buying_power / price)
+        should_buy = strategy.should_buy(ticker)
+        if portfolio.exists(ticker) and should_buy:
+            max_shares = int(float(self.account.buying_power) / price)
             preferred_shares = CONFIG.CHOOSE_AMOUNT(price)
             qty = min(max_shares, preferred_shares)
-            api.submit_order(
-                symbol=ticker, qty=qty, side="buy", type="market", time_in_force="day"
-            )
-            portfolio.add(ticker, qty)
-            cli.buy_msg(ticker, price, qty)
+            if qty == 0:
+                return
 
-    async def start_buys(self):
+            try:
+                portfolio.add(ticker, qty, price)
+                cli.buy_msg(ticker, price, qty)
+                self.buys[ticker] = (price, qty)
+            except:
+                cli.custom_msg("red", f" -> Error buying {ticker}")
+                pass
+
+    def start_buys(self):
         try:
             while True:
                 if not self.market_is_open():
-                    await asyncio.sleep(60)
+                    time.sleep(60)
                     continue
 
-                await self.get_tickers_json()
-                await asyncio.sleep(60)
+                self.get_tickers_json()
+                time.sleep(30)
         except KeyboardInterrupt:
-            portfolio.save()
             os._exit(0)
 
-    async def start_sells(self):
+    def start_sells(self):
         try:
             while True:
                 if not self.market_is_open():
-                    await asyncio.sleep(60)
+                    time.sleep(60)
                     continue
 
-                for ticker in portfolio.all():
-                    change = self.changes[ticker]
-                    if change < CONFIG.SELL_THRESHOLD:
-                        qty = portfolio.get(ticker)
-                        api.submit_order(
-                            symbol=ticker,
-                            qty=qty,
-                            side="sell",
-                            type="market",
-                            time_in_force="day",
-                        )
-                        portfolio.remove(ticker, ticker, qty)
-                        cli.sell_msg(ticker, self.market[ticker], qty)
-                await asyncio.sleep(60)
+                positions = portfolio.all()
+                for ticker in positions.keys():
+                    if ticker not in portfolio.cached():
+                        continue
+
+                    try:
+                        buy_amt, qty = self.buys[ticker]
+                        pricelist = storage.retrieve_data(ticker)
+                        should_sell = strategy.should_sell(buy_amt, pricelist)
+                        if should_sell:
+                            portfolio.remove(ticker)
+                            cli.sell_msg(ticker)
+                            del self.buys[ticker]
+                    except:
+                        cli.custom_msg("red", f" -> Error selling {ticker}")
+                        pass
+                time.sleep(5)
         except KeyboardInterrupt:
-            portfolio.save()
             os._exit(0)
 
 
@@ -139,19 +198,16 @@ class StockTraderRunner:
     def __init__(self):
         self.trader = StockTrader()
 
-    async def run(self):
+    def run(self):
         cli.print_startup()
-        loop = asyncio.get_event_loop()
-        loop.create_task(self.trader.start_buys())
-        loop.create_task(self.trader.start_sells())
-        loop.create_task(self.listen_for_exit())
-        loop.run_forever()
+        Thread(target=self.trader.start_buys).start()
+        Thread(target=self.trader.start_sells).start()
+        Thread(target=self.listen_for_exit).start()
 
     def exit_safely(self):
-        portfolio.save()
         os._exit(1)
 
-    async def listen_for_exit(self):
+    def listen_for_exit(self):
         try:
             while True:
                 if input() == "exit":

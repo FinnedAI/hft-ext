@@ -19,8 +19,8 @@ class CliHandler:
     def buy_msg(self, ticker, value, qty):
         print(f"{colors.green} -> BUY {ticker} ({value} x {qty}){colors.end}")
 
-    def sell_msg(self, ticker, value, qty):
-        print(f"{colors.red} -> SELL {ticker} ({value} x {qty}){colors.end}")
+    def sell_msg(self, ticker, value, qty, dir):
+        print(f"{colors.red} -> SELL [{dir}] {ticker} ({value} x {qty}){colors.end}")
 
     def custom_msg(self, color, msg):
         print(f"{colors.__dict__[color]}{msg}{colors.end}")
