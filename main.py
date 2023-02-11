@@ -1,4 +1,4 @@
-from trader import StockTraderRunner
+from scripts.trader import StockTraderRunner
 
 if __name__ == "__main__":
     runner = StockTraderRunner()

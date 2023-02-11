@@ -11,8 +11,6 @@ class Utils:
         :return: Yields iterable in batches of size n
         :rtype: generator
         """
-        if len(iterable) < n:
-            yield iterable
-        else:
-            for i in range(0, len(iterable), n):
-                yield iterable[i : i + n]
+        l = len(iterable)
+        for ndx in range(0, l, n):
+            yield iterable[ndx:min(ndx + n, l)]

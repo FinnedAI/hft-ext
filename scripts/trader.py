@@ -9,12 +9,12 @@ from alpaca.trading.enums import OrderSide, TimeInForce
 import urllib3
 import json
 import pandas as pd
-from cli import CliHandler
-from strategy import Strategy
+from scripts.cli import CliHandler
+from scripts.strategy import Strategy, NeuralNetworkModel
 from threading import Thread
 import time
 import sqlite3
-from utils import Utils
+from utils.utils import Utils
 
 http = urllib3.PoolManager()
 cli = CliHandler()
@@ -51,7 +51,7 @@ class Portfolio:
     def add(self, ticker, qty, price):
         order_data = self._create_market_order(ticker, qty, OrderSide.BUY)
         self._submit_order(order_data)
-        self.portfolio[ticker] = {'qty': qty, 'price': price}
+        self.portfolio[ticker] = {"qty": qty, "price": price}
 
     def remove(self, ticker):
         qty = self.portfolio[ticker]["qty"]
@@ -77,7 +77,7 @@ portfolio = Portfolio()
 
 class Storage:
     def __init__(self):
-        self.conn = sqlite3.connect("ticker_data.db")
+        self.conn = sqlite3.connect("data/ticker_data.db")
         self.create_table()
 
     def create_table(self):
@@ -117,48 +117,83 @@ class StockTrader:
     def __init__(self):
         self.account = api.get_account()
         self.market_is_open = lambda: api.get_clock().is_open
+        self.back_open = False
 
-    def get_tickers_json(self):
+    def _get_realtime_prices(self, tickers):
         tickers = utils.batch(CONFIG.TRADE_TICKERS, 1900)
-        url = f"https://query1.finance.yahoo.com/v7/finance/quote?formatted=true&symbols={'%2c'.join(tickers)}&corsDomain=finance.yahoo.com"
-        response = http.request("GET", url)
-        data = json.loads(response.data)
-        for ticker in data["quoteResponse"]["result"]:
-            try:
-                ticker, price = ticker["symbol"], ticker["regularMarketPrice"]["raw"]
-                storage.save_data(ticker, price)
-                self.make_decision(ticker, price)
-            except:
-                cli.custom_msg("red", f" -> Error with {ticker['symbol']}")
-                pass
+        prices = strategy.get_live_prices(tickers)
+        for ticker, price in prices.items():
+            storage.save_data(ticker, price)
+        return prices
 
-    def make_decision(self, ticker, price):
-        if float(self.account.buying_power) < price:
+    def _buy_manager(self, ticker, price):
+        # don't buy if we can't afford it or we already own it
+        # we don't want to buy if we already own it because we
+        # don't want to concentrate our money in one stock
+        if float(self.account.buying_power) < price or portfolio.exists(ticker):
             return
 
-        should_buy = strategy.should_buy(ticker)
-        if portfolio.exists(ticker) and should_buy:
-            max_shares = int(float(self.account.buying_power) / price)
-            preferred_shares = CONFIG.CHOOSE_AMOUNT(price)
-            qty = min(max_shares, preferred_shares)
-            if qty == 0:
-                return
+        pricelist = storage.retrieve_data(ticker)
+        # 450 is the number of minutes in a trading day
+        day_pricelist = pricelist[-450:] if len(pricelist) >= 450 else pricelist
+        should_buy = strategy.should_buy(ticker, day_pricelist)
+        if not should_buy:
+            return
 
-            try:
-                portfolio.add(ticker, qty, price)
-                cli.buy_msg(ticker, price, qty)
-            except:
-                cli.custom_msg("red", f" -> Error buying {ticker}")
-                pass
+        max_shares = int(float(self.account.buying_power) / price)
+        preferred_shares = CONFIG.CHOOSE_AMOUNT(price)
+        qty = min(max_shares, preferred_shares)
+        if qty == 0:
+            return
+
+        try:
+            portfolio.add(ticker, qty, price)
+            cli.buy_msg(ticker, price, qty)
+            storage.save_data(ticker, price)
+        except:
+            cli.custom_msg("red", f" -> Error buying {ticker}")
+            pass
+
+    def _sell_manager(self, ticker, price):
+        if not portfolio.exists(ticker):
+            return
+
+        buy_amt, qty = portfolio.get(ticker)
+        pricelist = storage.retrieve_data(ticker)
+        # 450 is the number of minutes in a trading day
+        day_pricelist = pricelist[-450:] if len(pricelist) >= 450 else pricelist
+        should_sell = strategy.should_sell(ticker, buy_amt, price, day_pricelist)
+        if should_sell:
+            portfolio.remove(ticker)
+            cli.sell_msg(ticker)
 
     def start_buys(self):
         try:
             while True:
                 if not self.market_is_open():
+                    if self.back_open:
+                        cli.custom_msg("yellow", " -> Stopping trades, market closed.")
+                        # train NeuralNetwork model on latest data
+                        for ticker in CONFIG.TRADE_TICKERS:
+                            pricelist = storage.retrieve_data(ticker)
+                            day_pricelist = (
+                                pricelist[-450:] if len(pricelist) >= 450 else pricelist
+                            )
+                            nn = NeuralNetworkModel(450, 2)
+                            X_train, y_train = nn._preprocess_data(day_pricelist)
+                            nn.fit(X_train, y_train, 64, 10)
+                            nn.save(ticker)
+
+                    self.back_open = False
                     time.sleep(60)
                     continue
 
-                self.get_tickers_json()
+                self.back_open = True
+                batches = utils.batch(CONFIG.TRADE_TICKERS, 1900)
+                for batch in batches:
+                    prices = self._get_realtime_prices(batch)
+                    for ticker, price in prices.items():
+                        self._buy_manager(ticker, price)
                 time.sleep(30)
         except KeyboardInterrupt:
             os._exit(0)
@@ -170,21 +205,11 @@ class StockTrader:
                     time.sleep(60)
                     continue
 
-                positions = portfolio.all()
-                for ticker in positions.keys():
-                    if ticker not in portfolio.cached():
-                        continue
-
-                    try:
-                        buy_amt, qty = portfolio.get(ticker)
-                        pricelist = storage.retrieve_data(ticker)
-                        should_sell = strategy.should_sell(buy_amt, pricelist)
-                        if should_sell:
-                            portfolio.remove(ticker)
-                            cli.sell_msg(ticker)
-                    except:
-                        cli.custom_msg("red", f" -> Error selling {ticker}")
-                        pass
+                batches = utils.batch(CONFIG.TRADE_TICKERS, 1900)
+                for batch in batches:
+                    prices = self._get_realtime_prices(batch)
+                    for ticker, price in prices.items():
+                        self._sell_manager(ticker, price)
                 time.sleep(5)
         except KeyboardInterrupt:
             os._exit(0)
