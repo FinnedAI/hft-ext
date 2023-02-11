@@ -39,6 +39,9 @@ class Portfolio:
         positions = account.list_positions()
         return {position.symbol: position.qty for position in positions}
 
+    def get(self, ticker):
+        return self.portfolio[ticker]["price"], self.portfolio[ticker]["qty"]
+
     def cached(self):
         return self.portfolio
 
@@ -46,31 +49,27 @@ class Portfolio:
         return ticker in self.all().keys()
 
     def add(self, ticker, qty, price):
-        market_order_data = MarketOrderRequest(
-            symbol=ticker,
-            qty=qty,
-            side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY,
-        )
-        api.submit_order(order_data=market_order_data)
-        # wait for order to be processed
-        time.sleep(CONFIG.ALPACA_TIMEOUT)
-        # add to self.portfolio
-        self.portfolio[ticker] = {qty: qty, price: price}
+        order_data = self._create_market_order(ticker, qty, OrderSide.BUY)
+        self._submit_order(order_data)
+        self.portfolio[ticker] = {'qty': qty, 'price': price}
 
     def remove(self, ticker):
         qty = self.portfolio[ticker]["qty"]
-        market_order_data = MarketOrderRequest(
+        order_data = self._create_market_order(ticker, qty, OrderSide.SELL)
+        self._submit_order(order_data)
+        del self.portfolio[ticker]
+
+    def _create_market_order(self, ticker, qty, side):
+        return MarketOrderRequest(
             symbol=ticker,
             qty=qty,
-            side=OrderSide.SELL,
+            side=side,
             time_in_force=TimeInForce.DAY,
         )
-        api.submit_order(order_data=market_order_data)
-        # wait for order to be processed
+
+    def _submit_order(self, order_data):
+        api.submit_order(order_data=order_data)
         time.sleep(CONFIG.ALPACA_TIMEOUT)
-        # remove from self.portfolio
-        del self.portfolio[ticker]
 
 
 portfolio = Portfolio()
@@ -111,14 +110,13 @@ class Storage:
 
 
 storage = Storage()
+storage.create_table()
 
 
 class StockTrader:
     def __init__(self):
         self.account = api.get_account()
         self.market_is_open = lambda: api.get_clock().is_open
-        # keep track of buys and prices
-        self.buys = {}
 
     def get_tickers_json(self):
         tickers = utils.batch(CONFIG.TRADE_TICKERS, 1900)
@@ -149,7 +147,6 @@ class StockTrader:
             try:
                 portfolio.add(ticker, qty, price)
                 cli.buy_msg(ticker, price, qty)
-                self.buys[ticker] = (price, qty)
             except:
                 cli.custom_msg("red", f" -> Error buying {ticker}")
                 pass
@@ -179,13 +176,12 @@ class StockTrader:
                         continue
 
                     try:
-                        buy_amt, qty = self.buys[ticker]
+                        buy_amt, qty = portfolio.get(ticker)
                         pricelist = storage.retrieve_data(ticker)
                         should_sell = strategy.should_sell(buy_amt, pricelist)
                         if should_sell:
                             portfolio.remove(ticker)
                             cli.sell_msg(ticker)
-                            del self.buys[ticker]
                     except:
                         cli.custom_msg("red", f" -> Error selling {ticker}")
                         pass
