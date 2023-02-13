@@ -1,25 +1,20 @@
 import config as CONFIG
 import os
-
-# trade api is needed to retrieve positions
 import alpaca_trade_api as tradeapi
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 import urllib3
-import json
-import pandas as pd
-from scripts.cli import CliHandler
-from scripts.strategy import Strategy, NeuralNetworkModel
+from scripts.strategy import Strategy
 from threading import Thread
 import time
-import sqlite3
-from utils.utils import Utils
+from utils.utils import Utils, Storage
+from utils.notifier import Notifier
 
 http = urllib3.PoolManager()
-cli = CliHandler()
+notify = Notifier()
 utils = Utils()
-strategy = Strategy()
+strategy = Strategy(modelname=CONFIG.MODEL)
 api = TradingClient(
     CONFIG.ALPACA_PUBLIC_KEY, CONFIG.ALPACA_SECRET_KEY, paper=CONFIG.PAPER
 )
@@ -52,12 +47,14 @@ class Portfolio:
         order_data = self._create_market_order(ticker, qty, OrderSide.BUY)
         self._submit_order(order_data)
         self.portfolio[ticker] = {"qty": qty, "price": price}
+        notify.new_portfolio(self.cached())
 
     def remove(self, ticker):
         qty = self.portfolio[ticker]["qty"]
         order_data = self._create_market_order(ticker, qty, OrderSide.SELL)
         self._submit_order(order_data)
         del self.portfolio[ticker]
+        notify.new_portfolio(self.cached())
 
     def _create_market_order(self, ticker, qty, side):
         return MarketOrderRequest(
@@ -75,55 +72,23 @@ class Portfolio:
 portfolio = Portfolio()
 
 
-class Storage:
-    def __init__(self):
-        self.conn = sqlite3.connect("data/ticker_data.db")
-        self.create_table()
-
-    def create_table(self):
-        c = self.conn.cursor()
-        c.execute(
-            """CREATE TABLE IF NOT EXISTS ticker_data (
-                        ticker text,
-                        price real
-                    )"""
-        )
-        self.conn.commit()
-
-    def save_data(self, ticker, price):
-        c = self.conn.cursor()
-        c.execute(
-            """INSERT INTO ticker_data (ticker, price)
-                    VALUES (?,?)""",
-            (ticker, price),
-        )
-        self.conn.commit()
-
-    def retrieve_data(self, ticker):
-        c = self.conn.cursor()
-        c.execute(
-            """SELECT price FROM ticker_data
-                    WHERE ticker=?""",
-            (ticker,),
-        )
-        return c.fetchall()
-
-
-storage = Storage()
-storage.create_table()
-
-
 class StockTrader:
     def __init__(self):
         self.account = api.get_account()
         self.market_is_open = lambda: api.get_clock().is_open
         self.back_open = False
 
-    def _get_realtime_prices(self, tickers):
+    def _get_realtime_prices(self, tickers, thread):
         tickers = utils.batch(CONFIG.TRADE_TICKERS, 1900)
         prices = strategy.get_live_prices(tickers)
-        for ticker, price in prices.items():
-            storage.save_data(ticker, price)
+        for ticker, price in prices:
+            # sqlite can only handle one thread at a time
+            if thread == "buy":
+                self.buy_storage.save_data(ticker, price)
+            elif thread == "sell":
+                self.sell_storage.save_data(ticker, price)
+
+        time.sleep(CONFIG.ALPACA_TIMEOUT)
         return prices
 
     def _buy_manager(self, ticker, price):
@@ -133,9 +98,10 @@ class StockTrader:
         if float(self.account.buying_power) < price or portfolio.exists(ticker):
             return
 
-        pricelist = storage.retrieve_data(ticker)
+        pricelist = self.buy_storage.retrieve_data(ticker)
         # 450 is the number of minutes in a trading day
         day_pricelist = pricelist[-450:] if len(pricelist) >= 450 else pricelist
+        day_pricelist = [item[0] for item in day_pricelist]
         should_buy = strategy.should_buy(ticker, day_pricelist)
         if not should_buy:
             return
@@ -148,41 +114,41 @@ class StockTrader:
 
         try:
             portfolio.add(ticker, qty, price)
-            cli.buy_msg(ticker, price, qty)
-            storage.save_data(ticker, price)
+            notify.new_action(f" -> Buy {ticker} ({price} x {qty})")
+            self.buy_storage.save_data(ticker, price)
         except:
-            cli.custom_msg("red", f" -> Error buying {ticker}")
+            notify.new_action(f" -> Error buying {ticker}")
             pass
+        time.sleep(CONFIG.ALPACA_TIMEOUT)
 
     def _sell_manager(self, ticker, price):
         if not portfolio.exists(ticker):
             return
 
-        buy_amt, qty = portfolio.get(ticker)
-        pricelist = storage.retrieve_data(ticker)
+        try:
+            buy_amt, qty = portfolio.get(ticker)
+        except:
+            notify.new_action(f" -> Error getting {ticker} from portfolio")
+            return
+
+        pricelist = self.sell_storage.retrieve_data(ticker)
         # 450 is the number of minutes in a trading day
         day_pricelist = pricelist[-450:] if len(pricelist) >= 450 else pricelist
+        day_pricelist = [item[0] for item in day_pricelist]
         should_sell = strategy.should_sell(ticker, buy_amt, price, day_pricelist)
         if should_sell:
             portfolio.remove(ticker)
-            cli.sell_msg(ticker)
+            notify.new_action(f" -> Sell {ticker} (BUY:{price} x {qty})")
+        time.sleep(CONFIG.ALPACA_TIMEOUT)
 
     def start_buys(self):
         try:
+            self.buy_storage = Storage()
+            self.buy_storage.create_table()
             while True:
                 if not self.market_is_open():
                     if self.back_open:
-                        cli.custom_msg("yellow", " -> Stopping trades, market closed.")
-                        # train NeuralNetwork model on latest data
-                        for ticker in CONFIG.TRADE_TICKERS:
-                            pricelist = storage.retrieve_data(ticker)
-                            day_pricelist = (
-                                pricelist[-450:] if len(pricelist) >= 450 else pricelist
-                            )
-                            nn = NeuralNetworkModel(450, 2)
-                            X_train, y_train = nn._preprocess_data(day_pricelist)
-                            nn.fit(X_train, y_train, 64, 10)
-                            nn.save(ticker)
+                        notify.new_action(" -> Error: Market is closed")
 
                     self.back_open = False
                     time.sleep(60)
@@ -191,8 +157,8 @@ class StockTrader:
                 self.back_open = True
                 batches = utils.batch(CONFIG.TRADE_TICKERS, 1900)
                 for batch in batches:
-                    prices = self._get_realtime_prices(batch)
-                    for ticker, price in prices.items():
+                    prices = self._get_realtime_prices(batch, "buy")
+                    for ticker, price in prices:
                         self._buy_manager(ticker, price)
                 time.sleep(30)
         except KeyboardInterrupt:
@@ -200,6 +166,8 @@ class StockTrader:
 
     def start_sells(self):
         try:
+            self.sell_storage = Storage()
+            self.sell_storage.create_table()
             while True:
                 if not self.market_is_open():
                     time.sleep(60)
@@ -207,10 +175,10 @@ class StockTrader:
 
                 batches = utils.batch(CONFIG.TRADE_TICKERS, 1900)
                 for batch in batches:
-                    prices = self._get_realtime_prices(batch)
-                    for ticker, price in prices.items():
+                    prices = self._get_realtime_prices(batch, "sell")
+                    for ticker, price in prices:
                         self._sell_manager(ticker, price)
-                time.sleep(5)
+                time.sleep(30)
         except KeyboardInterrupt:
             os._exit(0)
 
@@ -220,7 +188,6 @@ class StockTraderRunner:
         self.trader = StockTrader()
 
     def run(self):
-        cli.print_startup()
         Thread(target=self.trader.start_buys).start()
         Thread(target=self.trader.start_sells).start()
         Thread(target=self.listen_for_exit).start()
