@@ -38,7 +38,7 @@ HFT-EXT is a framework that allows you to build your own high-frequency trading 
 
 
 ## I'm sold! How do I get started?
-_To get started, ensure you have Python 3.8 or higher installed. You can download Python [here](https://www.python.org/downloads/). Also, you must make a (free) account with Alpaca. You can do this [here](https://app.alpaca.markets/signup). This account will be used to make paper or live trades, and to retrieve information on your portfolio. You will also need to create an API key for your account. You can do this [here](https://app.alpaca.markets/paper/dashboard/overview). Make sure you save your API key and secret key somewhere safe. You will need them later._
+_To get started, ensure you have Python 3.8 or higher installed. You can download Python [here](https://www.python.org/downloads/). Also, you must make a (free) account with Alpaca. You can do this [here](https://app.alpaca.markets/signup). This account will be used to make paper or live trades, and to retrieve information on your portfolio. You will also need to create an API public and secret key for your account. You can do this [here](https://app.alpaca.markets/paper/dashboard/overview). Make sure you save your API key and secret key somewhere safe. You will need them later._
 
 First, you need to install the framework. You can do this by running the following command in your terminal:
 ```bash
