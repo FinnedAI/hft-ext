@@ -1,8 +1,12 @@
-<img alt="hft-logo" align="center" src="images/HFT-Header.png"/>
-  
+<p align="center">
+  <img alt="hft-logo" src="images/header.png"/>
+</p>
+
   [![GitHub license](https://img.shields.io/github/license/finned-digital-solutions/hft-ext?style=for-the-badge)]()
   [![Discord](https://img.shields.io/discord/1058906255332229140?style=for-the-badge)](https://discord.gg/HeqqWewjea)
   [![GitHub issues](https://img.shields.io/github/issues/finned-digital-solutions/hft-ext?style=for-the-badge)](https://github.com/finned-digital-solutions/hft-ext/issues)
+  [![GitHub forks](https://img.shields.io/github/forks/finned-digital-solutions/hft-ext?style=for-the-badge)](https://github.com/finned-digital-solutions/hft-ext/network)
+  [![GitHub stars](https://img.shields.io/github/stars/finned-digital-solutions/hft-ext?style=for-the-badge)](https://github.com/finned-digital-solutions/hft-ext/stargazers)
 
 <br>
 
@@ -12,8 +16,9 @@
 
 
 ## Why should I use HFT-EXT?
-HFT-EXT is a framework that allows you to build your own high-frequency trading strategies. It is built on top of [Alpaca](https://alpaca.markets/) and Yahoo Finance. It is designed to be extensible, so you can easily add your own strategies and indicators using Python. In addition to this, it is open-source, so you can contribute to the project and help make it better. As opposed to other high-frequency traders, HFT-EXT is built by individuals, for individuals, not be shady hedge funds looking to make a quick buck.
+HFT-EXT is a framework that allows you to build your own high-frequency trading strategies. It is built on top of [Alpaca](https://alpaca.markets/) and Yahoo Finance. It is designed to be extensible, so you can easily add your own strategies and indicators using Python. In addition to this, it is open-source, so you can contribute to the project and help make it better. It is designed to be compatible with both paper and live trading accounts, and is designed to be easy to use, so you can get started trading in no time.
 
+![hft-ext](images/example.png)
 
 
 ## I'm sold! How do I get started?
@@ -30,6 +35,9 @@ Finally, you need to add your API keys to the `config.example.py` file. Simply f
 ```bash
 python main.py
 ```
+
+## I have a working strategy! How do I deploy it?
+You can deploy your strategy by changing the `Paper` variable to `False` in the `config.py` file. Please note that you will need to have a live trading account with Alpaca to do this. You can find more information about Alpaca's live trading accounts [here](https://alpaca.markets/docs/trading/account-plans/).
 
 
 ## How do I add my own strategies?
