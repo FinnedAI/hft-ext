@@ -133,6 +133,10 @@ No worries, it's pretty simple to get started. The framework is built on top of 
    |--+ utils: Contains utility functions used throughout the framework.
    |  |--+ utils.py: Contains utility functions related to sqlite3.
    |  |--+ notifier.py: Contains the Notifier class, which is responsible for sending update messages between threads (e.g., GUI and Trader).
+   |--+ helpers: Contains helper scripts for the framework.
+   |  |--+ auth.py: Script for adding API keys to the config.py file.
+   |  |--+ amount.py: Script for changing the amount of shares bought for each pricepoint.
+   |  |--+ tickers.py: Script for adding tickers to the config.py file.
    |--+ config.py: Contains the configuration variables for the framework.
    |--+ CONTRIBUTING.md
    |--+ LICENSE
