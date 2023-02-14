@@ -14,6 +14,20 @@
 # HFT-EXT
 > An extensible framework for high-frequency trading built on top of [Alpaca](https://alpaca.markets/) and Yahoo Finance.
 
+## Table of Contents
+- [HFT-EXT](#hft-ext)
+  - [Table of Contents](#table-of-contents)
+  - [Disclaimer](#disclaimer)
+  - [Why should I use HFT-EXT?](#why-should-i-use-hft-ext)
+  - [I'm sold! How do I get started?](#im-sold-how-do-i-get-started)
+  - [I have a working strategy! How do I deploy it to live trading?](#i-have-a-working-strategy-how-do-i-deploy-it-to-live-trading)
+  - [How do I add my own strategies?](#how-do-i-add-my-own-strategies)
+  - [What about if I want to change the amount of shares I buy for each pricepoint?](#what-about-if-i-want-to-change-the-amount-of-shares-i-buy-for-each-pricepoint)
+  - [This is great, but I wish I could customize which tickers I want to trade.](#this-is-great-but-i-wish-i-could-customize-which-tickers-i-want-to-trade)
+  - [I want to get to modifying the framework, but I don't know where to start.](#i-want-to-get-to-modifying-the-framework-but-i-dont-know-where-to-start)
+  - [I want to contribute!](#i-want-to-contribute)
+
+
 ## Disclaimer
 _It goes without saying that past performance is not indicative of future results. This framework is not intended to be used for live trading. If you do use it for live trading, you do so at your own risk. The authors of this framework are not responsible for any losses incurred by using this framework. Please use this framework responsibly._
 
@@ -33,7 +47,15 @@ Then, you need to install the dependencies. You can do this by running the follo
 cd hft-ext
 pip install -r requirements.txt
 ```
-Finally, you need to add your API keys to the `config.example.py` file. Simply fill the `ALPACA_PUBLIC_KEY` and `ALPACA_SECRET_KEY` variables with your API keys. Then, rename the file to `config.py`. You can now run the framework by running the following command in your terminal:
+Finally, you need to add your API keys to the `config.py` file. We have a built-in script that will help you do this. You can run this script by running the following command in your terminal:
+```bash
+cd helpers
+python auth.py
+```
+The script should look like this:
+![auth-example](images/auth-example.png)
+
+From there, make sure you are back in the root directory ``cd ..`` and run the following command in your terminal:
 ```bash
 python main.py
 ```
@@ -68,8 +90,25 @@ strategy = Strategy(ArimaStrategy())
 The default strategy used is the ARIMA strategy. You can find the code for this strategy in the `scripts/strategies.py` file, within the `ArimaStrategy` class.
 
 
+## What about if I want to change the amount of shares I buy for each pricepoint?
+By default, the model will buy a total of $200 worth of shares for each pricepoint. We recognize that this may be a bit too much for some people, so we have made it easy to change this. You can run the following command in your terminal to change the amount of shares you buy for each pricepoint:
+```bash
+cd helpers
+python amount.py
+```
+The script should look like this:
+![amount-example](images/amount-example.png)
+Which is also the default setting.
+
+
 ## This is great, but I wish I could customize which tickers I want to trade. 
-You can customize which tickers you want to trade by adding them to the `config.py` file. Simply add the tickers you want to trade to the `TRADE_TICKERS` variable. For example, if you want to trade Apple, Microsoft, and Tesla, you would add `TRADE_TICKERS = ["AAPL", "MSFT", "TSLA"]` to the `config.py` file. However, it is recommended that you use the default tickers, as they are the ones that have been tested and are known to work well with the framework.
+You can customize which tickers you want to trade by adding them to the `config.py` file. We have a built-in script that will help you do this. You can run this script by running the following command in your terminal:
+```bash
+cd helpers
+python tickers.py
+```
+The script should look like this:
+![tickers-example](images/tickers-example.png)
 
 As an aside, there are no limits to the number of tickers you can trade. However, the more tickers you trade, the more you risk running into API rate limits. If you do run into API rate limits, you can simply wait a few minutes and try again. If you want to avoid this, you can simply trade fewer tickers.
 
