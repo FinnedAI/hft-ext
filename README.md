@@ -7,6 +7,7 @@
   [![GitHub issues](https://img.shields.io/github/issues/finned-digital-solutions/hft-ext?style=for-the-badge)](https://github.com/finned-digital-solutions/hft-ext/issues)
   [![GitHub forks](https://img.shields.io/github/forks/finned-digital-solutions/hft-ext?style=for-the-badge)](https://github.com/finned-digital-solutions/hft-ext/network)
   [![GitHub stars](https://img.shields.io/github/stars/finned-digital-solutions/hft-ext?style=for-the-badge)](https://github.com/finned-digital-solutions/hft-ext/stargazers)
+  [![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg?style=for-the-badge)](https://www.paypal.com/paypalme/flancast90)
 
 <br>
 
