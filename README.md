@@ -13,7 +13,8 @@
 # HFT-EXT
 > An extensible framework for high-frequency trading built on top of [Alpaca](https://alpaca.markets/) and Yahoo Finance.
 
-
+## Disclaimer
+_It goes without saying that past performance is not indicative of future results. This framework is not intended to be used for live trading. If you do use it for live trading, you do so at your own risk. The authors of this framework are not responsible for any losses incurred by using this framework. Please use this framework responsibly._
 
 ## Why should I use HFT-EXT?
 HFT-EXT is a framework that allows you to build your own high-frequency trading strategies. It is built on top of [Alpaca](https://alpaca.markets/) and Yahoo Finance. It is designed to be extensible, so you can easily add your own strategies and indicators using Python. In addition to this, it is open-source, so you can contribute to the project and help make it better. It is designed to be compatible with both paper and live trading accounts, and is designed to be easy to use, so you can get started trading in no time.
@@ -36,7 +37,7 @@ Finally, you need to add your API keys to the `config.example.py` file. Simply f
 python main.py
 ```
 
-## I have a working strategy! How do I deploy it?
+## I have a working strategy! How do I deploy it to live trading?
 You can deploy your strategy by changing the `Paper` variable to `False` in the `config.py` file. Please note that you will need to have a live trading account with Alpaca to do this. You can find more information about Alpaca's live trading accounts [here](https://alpaca.markets/docs/trading/account-plans/).
 
 
@@ -44,10 +45,24 @@ You can deploy your strategy by changing the `Paper` variable to `False` in the 
 You can add your own strategies by adding a custom strategy to the `scripts/strategies.py` file. Strategies are defined as classes that inherit from the `Strategy` class. As such, they have several methods that need to be included in each strategy. These methods are:
 - `_should_buy()`: Responsible for determining whether or not the strategy should buy a new position.
 - `_should_sell()`: Responsible for determining whether or not the strategy should sell the current position.
-  
-It's also worth mentioning that the Strategy class name is important. For example, to implement a new ETS strategy class, the name of the strategy class must be `ETSStrategy`. This is because the framework uses the name of the strategy class to determine which strategy to run.
 
-Finally, to use your custom strategy in production, you need to add the strategy name to the `config.py` within the `MODEL` variable. For example, if you want to use the ETS strategy, you would add `MODEL = "ETS"` to the `config.py` file.
+Since they inherit from the `Strategy` class, make sure to include `Strategy` in the class definition. For example, if you want to create a strategy called `MyCustomStrategyName`, you would want to define it as follows:
+```python
+class MyCustomStrategyName(Strategy):
+  def _should_buy(self, past_prices:list) -> bool:
+    ...
+  def _should_sell(self, bought_price:float, current_price:float, past_prices:list) -> bool:
+    ...
+```
+  
+To then use your custom strategy, you have to instantiate it within `scripts/strategies.py`. This is done by adding the following line to the end of the file:
+```python
+strategy = Strategy(MyCustomStrategyName())
+```
+Where `MyCustomStrategyName` is the name of your custom strategy class. Currently, the model used is `ArimaStrategy`, which is an ARIMA model that uses the previous day of data to predict the next day's fluctuations. you can see it instantiated in the `scripts/strategies.py` file as follows:
+```python
+strategy = Strategy(ArimaStrategy())
+```
 
 The default strategy used is the ARIMA strategy. You can find the code for this strategy in the `scripts/strategies.py` file, within the `ArimaStrategy` class.
 

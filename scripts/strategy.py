@@ -5,17 +5,13 @@ import json
 import warnings
 
 http = urllib3.PoolManager()
-
+STRATEGY_REGISTRY = {}
 
 class Strategy:
-    def __init__(self, modelname):
-        self.model = self._load_model(modelname)
-
-    def _load_model(self, modelname):
-        # models are named "modelname"+"Model"
-        # so we can dynamically load the model
-        # and return an instance of it
-        return globals()[modelname + "Model"]()
+    def __init__(self, strategy):
+        if not isinstance(strategy, Strategy):
+            raise ValueError("Invalid strategy")
+        self.model = strategy
 
     def get_live_prices(self, batches):
         formatted = []
@@ -46,13 +42,18 @@ class Strategy:
         return self.model._should_sell(buy_amt, current_amt, cleaned)
 
 
+def register_strategy(name):
+    def decorator(cls):
+        STRATEGY_REGISTRY[name] = cls
+        return cls
+
+    return decorator
+
 """
 Simplest model possible, just predicts the percent chance
 that the price will increase or decrease in the next period.
 """
-
-
-class ArimaModel:
+class ArimaModel(Strategy):
     def __init__(self):
         self.prob_increase = None
         self.prob_decrease = None
@@ -86,3 +87,6 @@ class ArimaModel:
             return False
         if current_amt > buy_amt and self.prob_decrease >= 0.5:
             return True
+
+
+strategy = Strategy(ArimaModel())

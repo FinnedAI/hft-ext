@@ -1,0 +1,7 @@
+alpaca==1.0.0
+alpaca_trade_api==2.3.0
+customtkinter==5.1.2
+matplotlib==3.6.3
+pandas==1.5.2
+statsmodels==0.13.5
+urllib3==1.26.8

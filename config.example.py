@@ -1,7 +1,6 @@
 ALPACA_PUBLIC_KEY = "<your public key>"
 ALPACA_SECRET_KEY = "<your secret key>"
 PAPER = True
-MODEL = "Arima"
 
 # list of large cap stocks to trade
 TRADE_TICKERS = [

@@ -5,7 +5,7 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 import urllib3
-from scripts.strategy import Strategy
+from scripts.strategy import strategy
 from threading import Thread
 import time
 from utils.utils import Utils, Storage
@@ -14,7 +14,6 @@ from utils.notifier import Notifier
 http = urllib3.PoolManager()
 notify = Notifier()
 utils = Utils()
-strategy = Strategy(modelname=CONFIG.MODEL)
 api = TradingClient(
     CONFIG.ALPACA_PUBLIC_KEY, CONFIG.ALPACA_SECRET_KEY, paper=CONFIG.PAPER
 )
@@ -29,19 +28,34 @@ account = tradeapi.REST(
 class Portfolio:
     def __init__(self):
         self.portfolio = {}
+        self.filled = False
 
     def all(self):
         positions = account.list_positions()
-        return {position.symbol: position.qty for position in positions}
+        for position in positions:
+            self.portfolio[position.symbol] = {
+                "qty": float(position.qty),
+                "price": float(position.avg_entry_price),
+            }
+
+        notify.new_portfolio(self.portfolio)
 
     def get(self, ticker):
+        if not self.filled:
+            self.all()
+            self.filled = True
+        
         return self.portfolio[ticker]["price"], self.portfolio[ticker]["qty"]
 
     def cached(self):
+        if not self.filled:
+            self.all()
+            self.filled = True
+        
         return self.portfolio
 
     def exists(self, ticker):
-        return ticker in self.all().keys()
+        return ticker in self.cached().keys()
 
     def add(self, ticker, qty, price):
         order_data = self._create_market_order(ticker, qty, OrderSide.BUY)

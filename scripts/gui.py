@@ -1,4 +1,3 @@
-import tkinter as tk
 import customtkinter as ctk
 from alpaca.trading.client import TradingClient
 from utils.utils import Storage
@@ -76,7 +75,10 @@ class Updater:
     # show liveview with specified ticker
     def update_liveview(self, ticker, pricelist):
         for widget in liveview.winfo_children():
-            widget.destroy()
+            try:
+                widget.destroy()
+            except:
+                pass
 
         # make a line chart of pricelist using matplotlib
         fig = Figure(figsize=(5, 4), dpi=100)
@@ -103,16 +105,22 @@ class Updater:
 
     def update_portfolio(self, _portfolio):
         # clear portfolio
-        for widget in portfolio.winfo_children():
-            try:
+        try:
+            for widget in portfolio.winfo_children():
                 widget.destroy()
-            except:
-                pass
+        except:
+            pass
+
+        est_value = 0
+        for ticker in _portfolio:
+            est_value += float(_portfolio[ticker]["qty"]) * float(
+                _portfolio[ticker]["price"]
+            )
 
         # add header with large bolded text
         ctk.CTkLabel(
             portfolio,
-            text="My Portfolio: ",
+            text=f"My Portfolio (${round(est_value, 2)}): ",
             width=240,
             fg_color=Themeing.gray_complement,
             font=("Helvetica", 20, "bold"),
@@ -122,7 +130,7 @@ class Updater:
             # make bordered element and insert to portfolio
             ctk.CTkLabel(
                 portfolio,
-                text=str(ticker),
+                text=f"({_portfolio[ticker]['qty']}x{ticker}) @ ${_portfolio[ticker]['price']}",
                 width=240,
                 fg_color=Themeing.gray_complement,
             ).pack(expand=True, fill="both", pady=1, padx=1)
@@ -187,5 +195,8 @@ def start_gui():
     updater.update_buttons()
     updater.update_liveview(CONFIG.TRADE_TICKERS[0], defaults.liveview())
     updater.update_actions(defaults.actions())
-    updater.update_portfolio(["Your stocks will appear here..."])
+    # portfolio is updated by the trading algorithm
+    # once it is initialized
+
+    app.protocol("WM_DELETE_WINDOW", lambda: os._exit(1))
     app.mainloop()
