@@ -53,7 +53,9 @@ cd helpers
 python auth.py
 ```
 The script should look like this:
+
 ![auth-example](images/auth-example.png)
+
 
 From there, make sure you are back in the root directory ``cd ..`` and run the following command in your terminal:
 ```bash
@@ -97,7 +99,9 @@ cd helpers
 python amount.py
 ```
 The script should look like this:
+
 ![amount-example](images/amount-example.png)
+
 Which is also the default setting.
 
 
@@ -108,6 +112,7 @@ cd helpers
 python tickers.py
 ```
 The script should look like this:
+
 ![tickers-example](images/tickers-example.png)
 
 As an aside, there are no limits to the number of tickers you can trade. However, the more tickers you trade, the more you risk running into API rate limits. If you do run into API rate limits, you can simply wait a few minutes and try again. If you want to avoid this, you can simply trade fewer tickers.
