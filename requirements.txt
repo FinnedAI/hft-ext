@@ -1,4 +1,4 @@
-alpaca==1.0.0
+alpaca-py==0.7.1
 alpaca_trade_api==2.3.0
 customtkinter==5.1.2
 matplotlib==3.6.3
